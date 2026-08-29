@@ -179,8 +179,9 @@ class Admin(commands.Cog):
 
     @cupom_group.command(name="editar", description="Editar um cupom existente (CEO)")
     async def cupom_editar(
-              self, interaction: discord.Interaction, codigo: str, desconto_percentual: float = -1.0,
+        self, interaction: discord.Interaction, codigo: str, desconto_percentual: float = -1.0,
         validade: str = "", limite_usos: int = -1, valor_minimo: float = -1.0,
+    ):
         if not is_ceo(interaction.user):
             return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
         campos = {}
