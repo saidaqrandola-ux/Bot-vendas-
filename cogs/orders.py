@@ -135,4 +135,68 @@ class Orders(commands.Cog):
             return await self._resposta_sem_permissao(interaction)
         pedido = db.obter_pedido(pedido_id.upper())
         if not pedido:
-            return await interaction.
+            return await interaction.response.send_message("Pedido não encontrado.", ephemeral=True)
+        if pedido["status"] not in ("finalizado", "cancelado"):
+            db.ajustar_estoque(pedido["produto_id"], pedido["tamanho"], pedido["quantidade"])
+        await self._mudar_status(interaction, pedido_id, "cancelado", "❌ Pedido cancelado")
+
+    @pedido_group.command(name="reabrir", description="Reabrir um pedido cancelado/recusado")
+    async def pedido_reabrir(self, interaction: discord.Interaction, pedido_id: str):
+        await self._mudar_status(interaction, pedido_id, "aguardando_pagamento", "🔓 Pedido reaberto")
+
+    @pedido_group.command(name="observacao", description="Adicionar uma observação interna ao pedido")
+    async def pedido_observacao(self, interaction: discord.Interaction, pedido_id: str, texto: str):
+        if not self._checar_atendente(interaction):
+            return await self._resposta_sem_permissao(interaction)
+        pedido = db.obter_pedido(pedido_id.upper())
+        if not pedido:
+            return await interaction.response.send_message("Pedido não encontrado.", ephemeral=True)
+        nova_obs = (pedido.get("observacoes") or "") + f"\n[{interaction.user}]: {texto}"
+        db.atualizar_pedido(pedido["id"], observacoes=nova_obs.strip())
+        await interaction.response.send_message("📝 Observação adicionada.", ephemeral=True)
+
+    # ---------------- /cliente ----------------
+    @cliente_group.command(name="consultar", description="Ver dados de um cliente")
+    async def cliente_consultar(self, interaction: discord.Interaction, usuario: discord.Member):
+        if not self._checar_atendente(interaction):
+            return await self._resposta_sem_permissao(interaction)
+        pedidos = db.pedidos_do_cliente(usuario.id)
+        embed = discord.Embed(title=f"👤 {usuario}", color=discord.Color.blurple())
+        embed.add_field(name="Total de pedidos", value=str(len(pedidos)))
+        if pedidos:
+            ultimo = pedidos[0]
+            embed.add_field(name="Último pedido", value=f"{ultimo['id']} ({embeds.status_label(ultimo['status'])})")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @cliente_group.command(name="pedidos", description="Listar todos os pedidos de um cliente")
+    async def cliente_pedidos(self, interaction: discord.Interaction, usuario: discord.Member):
+        if not self._checar_atendente(interaction):
+            return await self._resposta_sem_permissao(interaction)
+        pedidos = db.pedidos_do_cliente(usuario.id)
+        if not pedidos:
+            return await interaction.response.send_message("Este cliente não tem pedidos.", ephemeral=True)
+        texto = "\n".join(f"{p['id']} — {embeds.status_label(p['status'])} — R$ {p['valor_total']:.2f}" for p in pedidos[:25])
+        await interaction.response.send_message(texto, ephemeral=True)
+
+    # ---------------- /rastreio-atendente ----------------
+    @rastreio_group.command(name="adicionar", description="Adicionar código de rastreio a um pedido")
+    async def rastreio_adicionar(self, interaction: discord.Interaction, pedido_id: str, codigo: str):
+        if not self._checar_atendente(interaction):
+            return await self._resposta_sem_permissao(interaction)
+        db.atualizar_pedido(pedido_id.upper(), rastreio=codigo)
+        pedido = db.obter_pedido(pedido_id.upper())
+        from cogs import notifications
+        await notifications.notificar_status(interaction.guild, pedido)
+        await interaction.response.send_message(f"📮 Rastreio adicionado ao pedido {pedido_id.upper()}.", ephemeral=True)
+
+    @rastreio_group.command(name="atualizar", description="Atualizar o código de rastreio de um pedido")
+    async def rastreio_atualizar(self, interaction: discord.Interaction, pedido_id: str, codigo: str):
+        await self.rastreio_adicionar.callback(self, interaction, pedido_id, codigo)
+
+    # Nota: "/produto consultar" e "/estoque consultar" (disponíveis para atendentes)
+    # ficam no cog admin.py junto com o restante dos comandos desses dois grupos,
+    # para evitar dois cogs registrando o mesmo app_commands.Group.
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Orders(bot))
