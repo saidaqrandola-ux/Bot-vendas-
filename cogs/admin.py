@@ -203,7 +203,6 @@ class Admin(commands.Cog):
 
     # ---------------- /preco e /custo ----------------
     @preco_group.command(name="ver", description="Ver preços de um produto (CEO)")
-    @preco_group.command(name="ver", description="Ver preços de um produto (CEO)")
     async def preco_ver(self, interaction: discord.Interaction, produto_id: int):
         if not is_ceo(interaction.user):
             return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
