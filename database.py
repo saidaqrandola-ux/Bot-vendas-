@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS pedidos (
     email TEXT,
     cupom_codigo TEXT,
     desconto REAL DEFAULT 0,
+    adicionais REAL DEFAULT 0,
     frete REAL DEFAULT 0,
     valor_total REAL DEFAULT 0,
     status TEXT DEFAULT 'aguardando_pagamento',
@@ -111,6 +112,12 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        # migração leve: adiciona colunas novas em bancos já existentes, sem apagar nada
+        for coluna, tipo in (("adicionais", "REAL DEFAULT 0"),):
+            try:
+                conn.execute(f"ALTER TABLE pedidos ADD COLUMN {coluna} {tipo}")
+            except sqlite3.OperationalError:
+                pass  # coluna já existe
 
 
 # ------------------------------------------------------------------
