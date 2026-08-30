@@ -14,6 +14,18 @@ def _erro_ceo():
     return "🚫 Apenas o CEO pode usar este comando."
 
 
+# Sigla + nome completo de cada uma das 27 unidades federativas do Brasil
+ESTADOS_BR = [
+    ("AC", "Acre"), ("AL", "Alagoas"), ("AP", "Amapá"), ("AM", "Amazonas"),
+    ("BA", "Bahia"), ("CE", "Ceará"), ("DF", "Distrito Federal"), ("ES", "Espírito Santo"),
+    ("GO", "Goiás"), ("MA", "Maranhão"), ("MT", "Mato Grosso"), ("MS", "Mato Grosso do Sul"),
+    ("MG", "Minas Gerais"), ("PA", "Pará"), ("PB", "Paraíba"), ("PR", "Paraná"),
+    ("PE", "Pernambuco"), ("PI", "Piauí"), ("RJ", "Rio de Janeiro"), ("RN", "Rio Grande do Norte"),
+    ("RS", "Rio Grande do Sul"), ("RO", "Rondônia"), ("RR", "Roraima"), ("SC", "Santa Catarina"),
+    ("SP", "São Paulo"), ("SE", "Sergipe"), ("TO", "Tocantins"),
+]
+
+
 class Admin(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -188,11 +200,11 @@ class Admin(commands.Cog):
                 elif qtd <= config.ESTOQUE_BAIXO_LIMITE:
                     linhas.append(f"🟡 {p['nome']} ({tamanho}) — {qtd} restante(s)")
         await interaction.response.send_message("\n".join(linhas) or "✅ Nenhum alerta de estoque.", ephemeral=True)
+
     # ---------------- /preco e /custo ----------------
     @preco_group.command(name="ver", description="Ver preços de um produto (CEO)")
+    @preco_group.command(name="ver", description="Ver preços de um produto (CEO)")
     async def preco_ver(self, interaction: discord.Interaction, produto_id: int):
-        if not is_ceo(interaction.user):
-            return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
         if not is_ceo(interaction.user):
             return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
         p = db.obter_produto(produto_id)
@@ -308,6 +320,26 @@ class Admin(commands.Cog):
             return await interaction.response.send_message("Nenhuma região configurada.", ephemeral=True)
         texto = "\n".join(f"{r['nome_regiao']}: R$ {r['valor']:.2f}" for r in regioes)
         await interaction.response.send_message(texto, ephemeral=True)
+
+    @frete_group.command(name="padrao-todos", description="Definir o mesmo valor de frete para todos os estados do Brasil (sigla + nome completo) (CEO)")
+    async def frete_padrao_todos(self, interaction: discord.Interaction, valor: float):
+        if not is_ceo(interaction.user):
+            return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        existentes = {r["nome_regiao"].lower(): r for r in db.listar_regioes_frete()}
+        total = 0
+        for sigla, nome in ESTADOS_BR:
+            for chave in (sigla, nome):
+                if chave.lower() in existentes:
+                    db.editar_regiao_frete(existentes[chave.lower()]["id"], valor)
+                else:
+                    db.adicionar_regiao_frete(chave, valor)
+                total += 1
+        await interaction.followup.send(
+            f"🚚 Frete de R$ {valor:.2f} configurado para os 27 estados do Brasil "
+            f"({total} entradas — sigla e nome completo de cada um).",
+            ephemeral=True,
+        )
 
     # ---------------- /vendas ----------------
     @app_commands.command(name="vendas", description="Ver relatório de vendas (CEO)")
