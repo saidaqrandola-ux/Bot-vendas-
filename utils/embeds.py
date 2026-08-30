@@ -31,7 +31,12 @@ def embed_resumo_pedido(pedido: dict, cor=discord.Color.blurple()) -> discord.Em
         )
 
     if pedido.get("cupom_codigo"):
-        embed.add_field(name="🎟️ Cupom", value=f"{pedido['cupom_codigo']} (-{pedido.get('desconto', 0):.2f})", inline=True)
+        embed.add_field(name="🎟️ Cupom", value=f"{pedido['cupom_codigo']}", inline=True)
+
+    if pedido.get("adicionais"):
+        embed.add_field(name="🔺 Adicionais", value=f"R$ {pedido['adicionais']:.2f}", inline=True)
+    if pedido.get("desconto"):
+        embed.add_field(name="💸 Desconto", value=f"R$ {pedido['desconto']:.2f}", inline=True)
 
     embed.add_field(name="🚚 Frete", value=f"R$ {pedido.get('frete', 0):.2f}", inline=True)
     embed.add_field(name="💰 Total", value=f"R$ {pedido.get('valor_total', 0):.2f}", inline=True)
