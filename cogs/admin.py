@@ -1,4 +1,6 @@
 import datetime
+import csv
+import io
 
 import discord
 from discord import app_commands
@@ -96,6 +98,55 @@ class Admin(commands.Cog):
             campos_publicos += f"\n💵 Custo: R$ {produto['preco_custo']:.2f}"
         await interaction.response.send_message(campos_publicos, ephemeral=True)
 
+    @produto_group.command(name="importar", description="Importar vários produtos de uma vez via planilha CSV (CEO)")
+    async def produto_importar(self, interaction: discord.Interaction, arquivo: discord.Attachment):
+        if not is_ceo(interaction.user):
+            return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
+        if not arquivo.filename.lower().endswith(".csv"):
+            return await interaction.response.send_message("⚠️ Envie um arquivo .csv.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        conteudo = (await arquivo.read()).decode("utf-8-sig")
+        leitor = csv.DictReader(io.StringIO(conteudo))
+
+        criados = []
+        erros = []
+        for i, linha in enumerate(leitor, start=2):  # linha 1 é o cabeçalho
+            try:
+                nome = linha["nome"].strip()
+                if not nome:
+                    continue
+                preco_venda = float(linha["preco_venda"])
+                preco_custo = float(linha.get("preco_custo") or 0)
+                permite_personalizacao = str(linha.get("permite_personalizacao", "")).strip().lower() in ("1", "true", "sim", "verdadeiro")
+                descricao = linha.get("descricao", "") or ""
+                imagem_url = linha.get("imagem_url", "") or ""
+
+                produto_id = db.criar_produto(nome, descricao, preco_venda, preco_custo, permite_personalizacao, imagem_url)
+
+                estoque_raw = (linha.get("estoque") or "").strip()
+                if estoque_raw:
+                    # formato esperado: "P:10;M:15;G:10"
+                    for par in estoque_raw.split(";"):
+                        if ":" not in par:
+                            continue
+                        tamanho, qtd = par.split(":", 1)
+                        db.set_estoque(produto_id, tamanho.strip().upper(), int(qtd.strip()))
+
+                criados.append(f"`{produto_id}` {nome}")
+            except Exception as e:
+                erros.append(f"Linha {i}: {e}")
+
+        resumo = f"✅ {len(criados)} produto(s) importado(s)."
+        if criados:
+            resumo += "\n" + "\n".join(criados[:30])
+            if len(criados) > 30:
+                resumo += f"\n... e mais {len(criados) - 30}."
+        if erros:
+            resumo += f"\n\n⚠️ {len(erros)} linha(s) com erro:\n" + "\n".join(erros[:10])
+
+        await interaction.followup.send(resumo[:1900], ephemeral=True)
+
     # ---------------- /estoque ----------------
     @estoque_group.command(name="consultar", description="Consultar estoque de um produto (atendente/CEO)")
     async def estoque_consultar(self, interaction: discord.Interaction, produto_id: int):
@@ -137,10 +188,11 @@ class Admin(commands.Cog):
                 elif qtd <= config.ESTOQUE_BAIXO_LIMITE:
                     linhas.append(f"🟡 {p['nome']} ({tamanho}) — {qtd} restante(s)")
         await interaction.response.send_message("\n".join(linhas) or "✅ Nenhum alerta de estoque.", ephemeral=True)
-
     # ---------------- /preco e /custo ----------------
     @preco_group.command(name="ver", description="Ver preços de um produto (CEO)")
     async def preco_ver(self, interaction: discord.Interaction, produto_id: int):
+        if not is_ceo(interaction.user):
+            return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
         if not is_ceo(interaction.user):
             return await interaction.response.send_message(_erro_ceo(), ephemeral=True)
         p = db.obter_produto(produto_id)
