@@ -35,8 +35,13 @@ class ProdutoSelect(discord.ui.Select):
                 content="🔴 Este produto está **ESGOTADO** no momento.", embed=None, view=None
             )
         carrinho = {"produto_id": produto_id, "produto_nome": produto["nome"], "preco_unitario": produto["preco_venda"]}
+        embed = None
+        if produto.get("imagem_url"):
+            embed = discord.Embed(title=produto["nome"], color=discord.Color.blurple())
+            embed.set_image(url=produto["imagem_url"])
         await interaction.response.edit_message(
             content=f"👕 **{produto['nome']}** selecionado. Agora escolha o tamanho:",
+            embed=embed,
             view=TamanhoView(disponiveis, carrinho, produto),
         )
 
@@ -74,15 +79,24 @@ class TamanhoView(discord.ui.View):
 
 
 # ------------------------------------------------------------------
-# Passo 3 - Quantidade
+# Passo 3 + 4 - Quantidade e Personalização (um único formulário)
 # ------------------------------------------------------------------
-class QuantidadeModal(discord.ui.Modal, title="Quantidade"):
-    quantidade = discord.ui.TextInput(label="Quantas unidades?", placeholder="Ex: 1", max_length=3)
-
+class QuantidadeModal(discord.ui.Modal):
     def __init__(self, carrinho, produto):
-        super().__init__()
+        super().__init__(title="Quantidade")
         self.carrinho = carrinho
         self.produto = produto
+
+        self.quantidade = discord.ui.TextInput(label="Quantas unidades?", placeholder="Ex: 1", max_length=3)
+        self.add_item(self.quantidade)
+
+        self.nome = None
+        self.numero = None
+        if produto["permite_personalizacao"]:
+            self.nome = discord.ui.TextInput(label="Nome para a camisa (opcional)", required=False, max_length=30)
+            self.numero = discord.ui.TextInput(label="Número para a camisa (opcional)", required=False, max_length=3)
+            self.add_item(self.nome)
+            self.add_item(self.numero)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -98,29 +112,8 @@ class QuantidadeModal(discord.ui.Modal, title="Quantidade"):
             )
 
         self.carrinho["quantidade"] = qtd
-
-        if self.produto["permite_personalizacao"]:
-            await interaction.response.send_modal(PersonalizacaoModal(self.carrinho))
-        else:
-            self.carrinho["personalizacao_nome"] = None
-            self.carrinho["personalizacao_numero"] = None
-            await mostrar_resumo(interaction, self.carrinho)
-
-
-# ------------------------------------------------------------------
-# Passo 4 - Personalização
-# ------------------------------------------------------------------
-class PersonalizacaoModal(discord.ui.Modal, title="Personalização"):
-    nome = discord.ui.TextInput(label="Nome para a camisa", required=False, max_length=30)
-    numero = discord.ui.TextInput(label="Número para a camisa", required=False, max_length=3)
-
-    def __init__(self, carrinho):
-        super().__init__()
-        self.carrinho = carrinho
-
-    async def on_submit(self, interaction: discord.Interaction):
-        self.carrinho["personalizacao_nome"] = self.nome.value or None
-        self.carrinho["personalizacao_numero"] = self.numero.value or None
+        self.carrinho["personalizacao_nome"] = self.nome.value if self.nome else None
+        self.carrinho["personalizacao_numero"] = self.numero.value if self.numero else None
         await mostrar_resumo(interaction, self.carrinho)
 
 
@@ -206,8 +199,22 @@ class ResumoView(discord.ui.View):
 
 
 # ------------------------------------------------------------------
-# Passo 6 - Formulário obrigatório (3 modais encadeados, limite de 5 campos por modal)
+# Passo 6 - Formulário obrigatório (3 modais em etapas, limite de 5 campos por modal)
 # ------------------------------------------------------------------
+class AbrirProximoFormularioView(discord.ui.View):
+    """Abre o próximo modal do formulário a partir de um clique de botão.
+    (Não dá para abrir um modal direto de dentro do on_submit de outro modal.)"""
+
+    def __init__(self, modal_class, carrinho):
+        super().__init__(timeout=300)
+        self.modal_class = modal_class
+        self.carrinho = carrinho
+
+    @discord.ui.button(label="Continuar", emoji="➡️", style=discord.ButtonStyle.success)
+    async def continuar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(self.modal_class(self.carrinho))
+
+
 class FormularioModal1(discord.ui.Modal, title="Seus dados (1/3)"):
     nome_completo = discord.ui.TextInput(label="Nome completo", max_length=100)
     endereco = discord.ui.TextInput(label="Endereço", max_length=100)
@@ -229,7 +236,11 @@ class FormularioModal1(discord.ui.Modal, title="Seus dados (1/3)"):
         self.carrinho["numero"] = self.numero.value
         self.carrinho["complemento"] = self.complemento.value
         self.carrinho["cidade"] = self.cidade.value
-        await interaction.response.send_modal(FormularioModal2(self.carrinho))
+        await interaction.response.send_message(
+            "✅ Parte 1 de 3 salva. Clique para continuar:",
+            view=AbrirProximoFormularioView(FormularioModal2, self.carrinho),
+            ephemeral=True,
+        )
 
 
 class FormularioModal2(discord.ui.Modal, title="Seus dados (2/3)"):
@@ -253,7 +264,11 @@ class FormularioModal2(discord.ui.Modal, title="Seus dados (2/3)"):
         self.carrinho["cep"] = self.cep.value
         self.carrinho["telefone"] = self.telefone.value
         self.carrinho["cpf"] = self.cpf.value
-        await interaction.response.send_modal(FormularioModal3(self.carrinho))
+        await interaction.response.send_message(
+            "✅ Parte 2 de 3 salva. Clique para continuar:",
+            view=AbrirProximoFormularioView(FormularioModal3, self.carrinho),
+            ephemeral=True,
+        )
 
 
 class FormularioModal3(discord.ui.Modal, title="Seus dados (3/3)"):
@@ -291,7 +306,9 @@ class FormularioModal3(discord.ui.Modal, title="Seus dados (3/3)"):
             view=ConfirmacaoView(self.carrinho),
             ephemeral=True,
         )
-        # ------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------
 # Passo 7 - Confirmação dos dados
 # ------------------------------------------------------------------
 class ConfirmacaoView(discord.ui.View):
@@ -307,8 +324,6 @@ class ConfirmacaoView(discord.ui.View):
     @discord.ui.button(label="Corrigir dados", emoji="✏️", style=discord.ButtonStyle.secondary)
     async def corrigir(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(FormularioModal1(self.carrinho))
-
-
 # ------------------------------------------------------------------
 # Passo 8 - Criação do pedido + PIX
 # ------------------------------------------------------------------
@@ -469,17 +484,25 @@ class Store(commands.Cog):
         produtos = db.listar_produtos()
         if not produtos:
             return await interaction.response.send_message("Catálogo vazio no momento.", ephemeral=True)
-        embed = discord.Embed(title="👕 Catálogo", color=discord.Color.blurple())
-        for p in produtos:
+
+        embeds_lista = []
+        for p in produtos[:10]:  # limite do Discord: até 10 embeds por mensagem
             disponiveis = db.tamanhos_disponiveis(p["id"])
             tamanhos_txt = ", ".join(disponiveis.keys()) if disponiveis else "🔴 ESGOTADO"
             marca = "⭐ " if p["destaque"] else ""
-            embed.add_field(
-                name=f"{marca}{p['nome']} — R$ {p['preco_venda']:.2f}",
-                value=f"Tamanhos: {tamanhos_txt}\n{p['descricao']}",
-                inline=False,
+            embed = discord.Embed(
+                title=f"{marca}{p['nome']} — R$ {p['preco_venda']:.2f}",
+                description=f"Tamanhos: {tamanhos_txt}\n{p['descricao']}",
+                color=discord.Color.blurple(),
             )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            if p.get("imagem_url"):
+                embed.set_image(url=p["imagem_url"])
+            embeds_lista.append(embed)
+
+        conteudo = None
+        if len(produtos) > 10:
+            conteudo = f"Mostrando 10 de {len(produtos)} produtos. Use /tamanhos <nome> para ver os demais."
+        await interaction.response.send_message(content=conteudo, embeds=embeds_lista, ephemeral=True)
 
     @app_commands.command(name="tamanhos", description="Ver tamanhos disponíveis de um produto")
     async def tamanhos(self, interaction: discord.Interaction, produto: str):
@@ -584,4 +607,3 @@ class Store(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Store(bot))
-
