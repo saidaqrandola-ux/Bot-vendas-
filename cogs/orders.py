@@ -23,24 +23,26 @@ class AprovacaoView(discord.ui.View):
     async def aprovar(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_atendente(interaction.user):
             return await interaction.response.send_message("🚫 Apenas atendentes/CEO podem aprovar pagamentos.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         pedido = db.obter_pedido(self.pedido_id)
         if not pedido:
-            return await interaction.response.send_message("Pedido não encontrado.", ephemeral=True)
+            return await interaction.followup.send("Pedido não encontrado.", ephemeral=True)
         db.atualizar_pedido(self.pedido_id, status="pagamento_aprovado", atendente_id=interaction.user.id)
         pedido = db.obter_pedido(self.pedido_id)
         from cogs import notifications
         await notifications.notificar_pagamento_aprovado(interaction.guild, pedido)
         button.disabled = True
-        await interaction.response.edit_message(view=self)
+        await interaction.message.edit(view=self)
         await interaction.followup.send(f"🟢 Pagamento do pedido {self.pedido_id} aprovado.", ephemeral=True)
 
     @discord.ui.button(label="Recusar pagamento", emoji="🔴", style=discord.ButtonStyle.danger)
     async def recusar(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_atendente(interaction.user):
             return await interaction.response.send_message("🚫 Apenas atendentes/CEO podem recusar pagamentos.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         pedido = db.obter_pedido(self.pedido_id)
         if not pedido:
-            return await interaction.response.send_message("Pedido não encontrado.", ephemeral=True)
+            return await interaction.followup.send("Pedido não encontrado.", ephemeral=True)
         db.atualizar_pedido(self.pedido_id, status="recusado", atendente_id=interaction.user.id)
         # devolve estoque reservado
         db.ajustar_estoque(pedido["produto_id"], pedido["tamanho"], pedido["quantidade"])
@@ -48,7 +50,7 @@ class AprovacaoView(discord.ui.View):
         from cogs import notifications
         await notifications.notificar_pagamento_recusado(interaction.guild, pedido)
         button.disabled = True
-        await interaction.response.edit_message(view=self)
+        await interaction.message.edit(view=self)
         await interaction.followup.send(f"🔴 Pagamento do pedido {self.pedido_id} recusado.", ephemeral=True)
 
 
@@ -92,14 +94,16 @@ class Orders(commands.Cog):
     async def _mudar_status(self, interaction, pedido_id, novo_status, mensagem):
         if not self._checar_atendente(interaction):
             return await self._resposta_sem_permissao(interaction)
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
         pedido = db.obter_pedido(pedido_id.upper())
         if not pedido:
-            return await interaction.response.send_message("Pedido não encontrado.", ephemeral=True)
+            return await interaction.followup.send("Pedido não encontrado.", ephemeral=True)
         db.atualizar_pedido(pedido["id"], status=novo_status, atendente_id=interaction.user.id)
         pedido = db.obter_pedido(pedido["id"])
         from cogs import notifications
         await notifications.notificar_status(interaction.guild, pedido)
-        await interaction.response.send_message(f"{mensagem} — {pedido['id']}", ephemeral=True)
+        await interaction.followup.send(f"{mensagem} — {pedido['id']}", ephemeral=True)
 
     @pedido_group.command(name="aprovar", description="Aprovar o pagamento de um pedido")
     async def pedido_aprovar(self, interaction: discord.Interaction, pedido_id: str):
@@ -183,11 +187,12 @@ class Orders(commands.Cog):
     async def rastreio_adicionar(self, interaction: discord.Interaction, pedido_id: str, codigo: str):
         if not self._checar_atendente(interaction):
             return await self._resposta_sem_permissao(interaction)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         db.atualizar_pedido(pedido_id.upper(), rastreio=codigo)
         pedido = db.obter_pedido(pedido_id.upper())
         from cogs import notifications
         await notifications.notificar_status(interaction.guild, pedido)
-        await interaction.response.send_message(f"📮 Rastreio adicionado ao pedido {pedido_id.upper()}.", ephemeral=True)
+        await interaction.followup.send(f"📮 Rastreio adicionado ao pedido {pedido_id.upper()}.", ephemeral=True)
 
     @rastreio_group.command(name="atualizar", description="Atualizar o código de rastreio de um pedido")
     async def rastreio_atualizar(self, interaction: discord.Interaction, pedido_id: str, codigo: str):
