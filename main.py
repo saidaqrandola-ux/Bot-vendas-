@@ -21,8 +21,8 @@ COGS = [
     "cogs.store",
     "cogs.orders",
     "cogs.admin",
+    "cogs.paineis",
 ]
-
 
 @bot.event
 async def on_ready():
