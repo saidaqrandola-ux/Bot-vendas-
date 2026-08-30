@@ -45,3 +45,34 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "loja.db")
 # Estoque baixo - a partir de quantas unidades avisar a equipe
 # ------------------------------------------------------------------
 ESTOQUE_BAIXO_LIMITE = int(os.getenv("ESTOQUE_BAIXO_LIMITE", "3"))
+
+# ------------------------------------------------------------------
+# Regras automáticas de precificação
+# ------------------------------------------------------------------
+# Acréscimo fixo por unidade quando o cliente escolhe um tamanho especial
+TAMANHOS_COM_ACRESCIMO = {
+    "XXL": 10.0,
+    "2GG": 10.0,
+    "XXXL": 20.0,
+    "3GG": 20.0,
+}
+
+# Taxa fixa cobrada quando o cliente personaliza (nome e/ou número)
+TAXA_PERSONALIZACAO = float(os.getenv("TAXA_PERSONALIZACAO", "29.90"))
+
+# Desconto automático por quantidade de peças no mesmo pedido.
+# A partir de 10 peças o desconto não é automático (fica "a consultar" com a equipe).
+FAIXAS_DESCONTO_QUANTIDADE = [
+    (10, None),   # 10+ peças: sem desconto automático, equipe consulta manualmente
+    (5, 35.0),
+    (3, 20.0),
+    (2, 10.0),
+]
+
+
+def desconto_por_quantidade(quantidade: int) -> float:
+    """Retorna o desconto automático (em R$) para uma dada quantidade de peças."""
+    for minimo, valor in FAIXAS_DESCONTO_QUANTIDADE:
+        if quantidade >= minimo:
+            return valor or 0.0
+    return 0.0
